@@ -1,0 +1,294 @@
+---
+title: "K Nearest Neighbors, K-means and Hierarchical Clustering"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+### Loading the specified libraries
+```{r}
+library(ggplot2)
+library(tidyr)
+library(class)
+library(gmodels)
+library(fpc)
+library(rsconnect)
+```
+
+
+
+```{r}
+data("iris")
+head(iris)
+```
+
+Checking the dimension of data
+```{r}
+dim(iris)
+```
+
+summarizing the data
+```{r}
+summary(iris)
+```
+### Exploring the data with visualization
+
+```{r}
+ggplot(iris,aes(x=Sepal.Length,y=Sepal.Width,color=Species)) + geom_jitter()
+```
+
+Restructuring the data for further visualization
+
+```{r}
+iris_tidy<- iris %>% gather(key,Value,-Species) %>% separate(key,c("Part","Measure"),"\\.")
+head(iris_tidy)
+```
+
+
+```{r}
+ggplot(iris_tidy,aes(x=Species,y=Value,color=Part,shape=Part))+geom_jitter()+facet_grid(. ~ Measure)
+```
+Creating a scatter plot for the length and width for 3 species of flowers in our data. The overall value of length is more than the width. Compared to versicolor and virginica the petal length and width of setosa is smaller.  
+
+```{r}
+ggplot(iris_tidy, aes(x=Species,y=Value,color=Part,fill=Part))+geom_col(position = "dodge")+facet_grid(~Measure)
+```
+
+Visualizing the metrics on a histogram , it's fairly obvious that the length of both petal and sepal is larger than the width.
+
+```{r}
+ggplot(iris, aes(x=Sepal.Width,fill=Species)) +geom_histogram(binwidth =.2,position="dodge")+labs(x='Sepal Width',y="count")
+```
+Ploting the variable Sepal length of all 3 flowers. We see that the sepal length of versicolor ranges from 2.0 to 3.4 and that of setosa is from 3.0 to 4.3. The y-axis shows the count of samples of these flowers in the data.
+
+```{r}
+ggplot(iris,aes(Petal.Length,fill=Species,..scaled..)) + geom_density(aes(alpha=0.4))
+```
+PLotting the density curve of petal length.
+
+## Suprevised Modelling
+
+The KNN algorithm assumes that similar things exist in close proximity. In other words, similar things are near to each other. It captures the idea of similarity (sometimes called distance, proximity, or closeness) with some mathematics we might have learned in our childhood— calculating the distance between points on a graph.
+
+There are other ways of calculating distance, and one way might be preferable depending on the problem we are solving. However, the straight-line distance (also called the Euclidean distance) is a popular and familiar choice.
+
+We have 120 observations in our dataset which we will break down into training and testing sets. The training set will be 80% of the size of the whole data and test set is 20% of the whole data.
+
+```{r}
+
+set.seed(13383610)
+size=floor(nrow(iris))
+shuffled<-iris[sample(size),]
+train_data=shuffled[1:(0.8*size),]
+test_data=shuffled[(0.8*size+1):(size),]
+
+```
+
+```{r}
+dim(train_data)
+```
+Size of training data
+
+```{r}
+dim(test_data)
+```
+Size of test data
+
+Trainig the model
+```{r}
+knn_iris <- knn(train = train_data[,-5],test= test_data[,-5],cl=train_data[,5],k=5)
+
+knn_iris
+```
+
+Checking the confusion matrix for our model to see how our model has performed.
+```{r}
+table(test_data[,5],knn_iris,dnn=c("True","Predicted")) 
+```
+
+It seems our model has performed well. 
+
+If we check the accuracy of the model in 30 total samples in our dataset. we get (10+11+9)*100/30 i.e. 100 accuracy. 
+Calculating the accuracy by formula:
+```{r}
+mean(test_data[,5]==knn_iris)
+```
+```{r}
+miserror <- sum(test_data[,5]!=knn_iris)/nrow(test_data)
+miserror
+```
+The misclassifcation rate is 1-accuracy, which is 0.083.
+Plotting the same output.
+```{r}
+plot(knn_iris)
+```
+```{r}
+CrossTable(x=test_data[,5],y=knn_iris,prop.chisq = FALSE)
+```
+Here we can see a more detailed view of the confusion matrix as well as the accuracy in each category. Setosa comprises of 33% of our test data, veriscolor is 36.7% and virginica is 30%. The accuracy is setosa is 1, that is 100% with no misclassifications.
+
+The overall accuracy is 0.333+0.367+0.300=1.00.
+
+
+Lets us train another model with the parameter K as 10.
+```{r}
+knn_iris2 <- knn(train = train_data[,-5],test= test_data[,-5],cl=train_data[,5],k=10)
+
+knn_iris2
+```
+```{r}
+table(test_data[,5],knn_iris2,dnn=c("True","Predicted")) 
+```
+
+```{r}
+mean(test_data[,5]==knn_iris2)
+```
+
+```{r}
+miserror2 <- sum(test_data[,5]!=knn_iris2)/nrow(test_data)
+miserror2
+```
+```{r}
+CrossTable(x=test_data[,5],y=knn_iris2,prop.chisq = FALSE)
+```
+Here we have again 100% accuracy in setosa and in virginica but in versicolor 1 sample is being predicted as virginica with an accuracy of 91.7%. The overall accuracy is 96.6%
+
+The overall accuracy is 0.333+0.367+0.267= 0.966.
+
+
+
+
+## K-means Clustering
+
+
+K-means Clustering is an unsupervised meachine learning algorithm. It groups similar datapoints together and discrovers underlying patterns, by identifying a fixed nummber (K) clusters in dataset. 'Means' refers to the averaging of the data .e. finding the clusters.
+K is defined as the number of centroids we need in the dataset. A centroid is an imaginary or real location representing teh center of the cluster.
+
+### Process:
+
+1) Starts with the first group of randomly selected centroids- which are the beginning points.
+
+2) Performs iterative(repititive) calculations to optimize the poistions of clusters.
+
+3) The process stops when the centroids are stabilized and the values don't change with further iterations or when the defined number of iterations are reached.
+
+
+The bigger the value of K, the lower will be the variance within the groups in the clustering. If K is equal to the number of observations, then each point will be a group and the variance will be 0. It’s necessary to find an optimum number of clusters. 
+variance within a group means how different the members of the group are. A large variance shows that there's more dissimilarity in the groups.
+
+```{r}
+set.seed(13383610)
+input <- iris[,1:4]
+kmeans_fit<-kmeans(input, centers = 3, nstart = 20)
+kmeans_fit
+```
+
+The kmeans() function outputs the results of the clustering. The cluster in which each observation was allocated has a mean and a percentage (88.4%) that represents the compactness of the clustering, and how similar are the members within the same group. If all the observations within a group were in the same exact point in the n-dimensional space, then we would achieve 100% of compactness.
+
+```{r}
+plotcluster(input,kmeans_fit$cluster,xlab="Number of groups") 
+```
+```{r}
+table(kmeans_fit$cluster, iris$Species)
+ 
+```
+As we can see, the data belonging to the setosa species got grouped into cluster 3, versicolor into cluster 2, and virginica into cluster 1. The algorithm wrongly classified 2 data points belonging to versicolor into virginica and 14 data points belonging to virginica into versicolor.
+
+
+
+Let's plot a chart showing the “within sum of squares” by the number of groups (K value). The within sum of squares is a metric that shows the dissimilarity within members of a group. The greater is the sum, the greater is the dissimilarity.
+
+```{r}
+wssplot <- function(input, nc=15, seed=13383610){
+               wss <- (nrow(input)-1)*sum(apply(input,2,var))
+               for (i in 2:nc){
+                    set.seed(seed)
+                    wss[i] <- sum(kmeans(input, centers=i)$withinss)}
+                plot(1:nc, wss, type="b", xlab="Number of groups",
+                     ylab="Sum of squares within a group")}
+
+wssplot(input, nc = 20)
+```
+We can see that going from K=3 to 4 there's a decrease in the sum of squares, which means our dissimilarity will decrease and compactness will increase if we take K=4.
+So, let’s choose K = 4 and run the K-means again.
+```{r}
+kmeans_fit2<-kmeans(input, centers = 4, nstart = 20)
+kmeans_fit2
+```
+
+Using 3 groups (K = 3) we had 88.4% of well-grouped data. Using 4 groups (K = 4) that value raised to 91.6%, which is a good value for us.
+
+
+## Hierarchial Clustering
+
+Hierarchical clustering is an alternative approach to clustering which builds a hierarchy from the bottom-up, and doesn’t require us to specify the number of clusters beforehand. There are two types of hierarchial clustering
+
+a) Agglomerative- Each data point is considered a separate cluster initially and at each iteration, similar clusters merge with other clusters util one or desired number of clusters are formed.
+
+b) Divisive-It's the opposite of Agglomerative clustering. All data points are considered into a singlt cluster and then are seaprated further until we get the desired number of clusters.
+
+### Process:
+
+1) Compute proximity/dissimilarity/distance matrix. This is the backbone of our clustering. It is a mathematical expression of how different or distant the datapoints are from each other.
+
+2) There are many ways to calulate dissimilarity between clusters. These are the linkage methods.
+   a) MIN
+   b) MAX
+   c) Group Average
+   d) Ward's method
+
+3) Let each data point be a cluster.
+
+4) Merge the 2 closest clusters based on the distances from the distance matrix and as a result the       amount of clusters goes down by 1
+
+5)Update proximity/distance matrix and repeat step 4 until desired clusters remain.
+
+
+Let us see how well the hierarchical clustering algorithm performs on our dataset. We will use hclust for this which requires us to provide the data in the form of a distance matrix. We will create this by using dist.
+
+```{r}
+clusters <- hclust(dist(iris[, 1:4]))
+```
+
+In hierarchical clustering, we categorize the objects into a hierarchy similar to a tree-like diagram which is called a dendrogram.
+
+```{r}
+plot(clusters, xlab="Clusters",
+                     ylab="Height of dendogram")
+```
+
+
+We'll cut our dendogram at cluster 3 and check how it performs.
+
+```{r}
+clusterCut <- cutree(clusters, 3)
+table(clusterCut, iris$Species)
+```
+
+It looks like the algorithm successfully classified all the flowers of species setosa into cluster 1, and virginica into cluster 2, but had trouble with versicolor.
+
+Let us see if we can better by using a different linkage method. This time, we will use the mean linkage method
+
+```{r}
+clusters2 <- hclust(dist(iris[, 1:4]), method = 'average')
+plot(clusters2,xlab="Clusters",
+                     ylab="Height of dendogram")
+```
+Next, we'll cut the dendrogram in order to create the desired number of clusters. Since in this case we already know that there are three Species we will choose the number of clusters to be k = 3. We will use the cutree() function.
+
+
+```{r}
+clusterCut2 <- cutree(clusters2, k= 3)
+plot(clusters2, xlab="Clusters",
+                     ylab="Height of dendogram")
+rect.hclust(clusters2 , k = 3, border = 2:6)
+abline(h = 3, col = 'red')
+
+```
+```{r}
+table(clusterCut2, iris$Species)
+```
+
+We can see that this time, the algorithm did a little better but has prolem classifying virginica properly.
+
