@@ -1,0 +1,505 @@
+---
+title: "Bankruptcy Data"
+output:
+  html_document:
+    df_print: paged
+---
+This dataset is a subset of Man Xu’s project containing the financial information of the companies. It contains 5436 observations with 13 variables. Variable CUSIP contains unique code to identify the company, variable FR determines the fiscal year and Variable DLRSN is the Bankruptcy/Non Bankruptcy flag, where 1 stands for Bankruptcy while 0 stands for Non Bankrupt companies. Variables R1 to R10 contain financial information which will be used while building a logistic regression model.
+
+```{r}
+library(tidyverse)
+library(DT)
+library(glmnet)
+library(rpart)
+library(caret)
+library(knitr)
+```
+
+
+Bankruptcy dataBankruptcy data (Case) –subset of Man Xu's project (Pages 20-23 for detail). Ten covariates:
+R1=Working Capital/Total Asset
+R2=Retained Earning/Total Asset
+R3=Earning Before Interest & Tax/Total Asset
+R4=Market Capital/ Total Liability
+R5=SALE/Total Asset
+R6=Total Liability/Total Asset
+R7=CurrentAsset/Current Liability
+R8=Net Income/Total Asset
+R9=LOG(SALE)
+R10=LOG(Market Cap)
+
+```{r}
+data<-read.csv("data/bankruptcy.csv",header=T)
+head(data)
+```
+
+```{r}
+dim(data)
+colnames(data)
+```
+```{r}
+data<-data[,-c(1,3)]
+head(data)
+```
+
+
+```{r}
+str(data)
+```
+```{r}
+colSums(is.na(data))
+```
+
+```{r}
+#install.packages("ExPanDaR")
+library(ExPanDaR)
+```
+
+```{r}
+#ExPanD(data, export_nb_option = TRUE)
+```
+
+
+
+```{r}
+summary(data)
+```
+
+```{r}
+mcor<-round(cor(data[,c(2:11)]),2)
+mcor
+```
+
+```{r}
+upper<-mcor
+upper[upper.tri(mcor)]<-""
+upper<-as.data.frame(upper)
+upper
+```
+```{r}
+library(xtable)
+print(xtable(upper), type="html")
+```
+
+
+```{r}
+library(ggplot2)
+ggplot(data,aes(x=data$R1))+geom_histogram(color="black",fill="white")
+```
+
+```{r}
+library(ggplot2)
+ggplot(data,aes(x=data$R2))+geom_histogram(color="black",fill="white")
+```
+
+```{r}
+library(ggplot2)
+ggplot(data,aes(x=data$R4))+geom_histogram(color="black",fill="white")
+```
+
+```{r}
+ggplot(data,aes(x=data$R3))+geom_histogram(color="black",fill="white")
+```
+
+```{r}
+ggplot(data,aes(x=data$R5))+geom_histogram(color="black",fill="white")
+```
+
+```{r}
+ggplot(data,aes(x=data$R6))+geom_histogram(color="black",fill="white")
+```
+
+```{r}
+ggplot(data,aes(x=data$R7))+geom_histogram(color="black",fill="white")
+```
+
+```{r}
+ggplot(data,aes(x=data$R8))+geom_histogram(color="black",fill="white")
+```
+
+```{r}
+ggplot(data,aes(x=data$R9))+geom_histogram(color="black",fill="white")
+```
+
+```{r}
+ggplot(data,aes(x=data$R10))+geom_histogram(color="black",fill="white")
+```
+
+
+```{r}
+boxplot(data[,2:6])
+```
+
+```{r}
+boxplot(data[,7:11])
+```
+
+```{r}
+library(psych)
+pairs.panels(data[c("R1","R2","R3","R4","R5","R6","R7","R8","R9","R10")],hist.col="green",gap=0)
+```
+
+```{r}
+library(dplyr)
+data<- rename(data,bankruptcy=DLRSN)
+```
+```{r}
+head(data)
+```
+
+```{r}
+dim(data)
+```
+
+```{r}
+set.seed(13383610)
+index <- sample(nrow(data),nrow(data)*0.70)
+data.train = data[index,]
+data.test = data[-index,]
+```
+
+```{r}
+# Logistic regression
+data.glm<-glm(bankruptcy~.,family = binomial,data=data.train)
+summary(data.glm)
+```
+```{r}
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(jtools)
+library(kableExtra)
+```
+
+```{r}
+summ(data.glm)
+```
+
+
+```{r}
+data.glm$deviance
+
+```
+```{r}
+AIC(data.glm)
+```
+
+```{r}
+BIC(data.glm)
+```
+```{r}
+hist(predict(data.glm))
+```
+```{r}
+hist(predict(data.glm,type="response"))
+```
+
+```{r}
+table(predict(data.glm,type="response")>0.5)*1
+
+```
+
+```{r}
+table(predict(data.glm,type="response")>0.2)*1
+```
+```{r}
+library(ROCR)
+predict2.train<- predict(data.glm,type="response")
+pred4 <- prediction(predict2.train, data.train$bankruptcy)
+perf4 <- performance(pred4, "tpr", "fpr")
+plot(perf4, colorize=TRUE)
+```
+
+```{r}
+unlist(slot(performance(pred4, "auc"), "y.values"))
+```
+```{r}
+#Binary classificartion
+predict.glm.train<-predict(data.glm,type="response")
+
+#convert to binary
+pcut1<-mean(data.train$bankruptcy)
+pcut1
+class.glm.train<- (predict.glm.train>pcut1)*1
+```
+
+```{r}
+#misclassification rate
+MR<-mean(data.train$bankruptcy!=class.glm.train)
+#false positive rate
+FPR<-sum(data.train$bankruptcy == 0 & class.glm.train == 1)/sum(data.train$bankruptcy==0)
+FPR
+
+FNR<-sum(data.train$bankruptcy == 1 & class.glm.train == 0)/sum(data.train$bankruptcy == 1)
+MR
+```
+
+
+**Variables Selection using step AIC**
+```{r}
+fullmodel<- glm(bankruptcy ~ .,
+                  data=data.train,
+                  family=binomial)
+
+nullmodel = glm(bankruptcy~1,data=data.train,family=binomial)
+model_step_both <- step(nullmodel, direction = 'both',
+                        scope = list(lower=nullmodel,upper=fullmodel))
+
+summary(model_step_both)
+```
+```{r}
+tab_model(model_step_both)
+```
+
+```{r}
+summ(model_step_both)
+```
+
+
+```{r}
+AIC(model_step_both)
+```
+
+```{r}
+BIC(model_step_both)
+```
+
+```{r}
+
+```
+
+
+**Variables Selection using step BIC**
+```{r}
+model_step_both_bic <- step(nullmodel, direction = 'both',
+                        scope = list(lower=nullmodel,upper=fullmodel),k=log(nrow(data.train)))
+
+summary(model_step_both_bic)
+```
+
+```{r}
+tab_model(model_step_both_bic)
+```
+
+```{r}
+summ(model_step_both_bic)
+```
+
+
+```{r}
+BIC(model_step_both_bic)
+```
+```{r}
+AIC(model_step_both_bic)
+```
+```{r}
+
+```
+
+**ROC of Train Predictions**
+
+```{r}
+predict.train<- predict(model_step_both,type="response")
+library(ROCR)
+pred <- prediction(predict.train, data.train$bankruptcy)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize=TRUE)
+```
+
+```{r}
+unlist(slot(performance(pred, "auc"), "y.values"))
+```
+
+```{r}
+p <- performance(pred,"auc")
+as.numeric(p@y.values)
+```
+
+```{r}
+pred1 <- prediction(predict(model_step_both_bic), data.train$bankruptcy)
+perf1 <- performance(pred1, "tpr", "fpr")
+plot(perf1, colorize=TRUE)
+```
+
+```{r}
+unlist(slot(performance(pred1, "auc"), "y.values"))
+```
+
+### Testing the out of sample performance: 
+
+**Symmetric Cost**
+
+
+```{r}
+#Binary classificartion
+predict.train<-predict(model_step_both,type="response")
+
+#convert to binary
+pcut1<-mean(data.train$bankruptcy)
+class.train<- (predict.train>pcut1)*1
+
+#evaluate perfromacne
+table(data.train$bankruptcy,class.train,dnn=c("True","Predicted"))
+
+```
+
+```{r}
+#misclassification rate
+MR<-mean(data.train$bankruptcy!=class.train)
+MR
+```
+**Asymmetric** 
+
+```{r}
+#dtermine optimal cutoff
+
+# define a cost function with input "obs" being observed response 
+# and "pi" being predicted probability, and "pcut" being the threshold.
+costfunc = function(obs, pred.p, pcut){
+  weight1 = 35   # define the weight for "true=1 but pred=0" (FN)
+  weight0 = 1    # define the weight for "true=0 but pred=1" (FP)
+  c1 = (obs==1)&(pred.p<pcut)    # count for "true=1 but pred=0"   (FN)
+  c0 = (obs==0)&(pred.p>=pcut)   # count for "true=0 but pred=1"   (FP)
+  cost = mean(weight1*c1 + weight0*c0)  # misclassification with weight
+  return(cost) # you have to return to a value when you write R functions
+} # end of the function
+
+```
+
+```{r}
+p.seq=seq(0.01,1,0.01)
+cost=rep(0,length(p.seq))
+for( i in 1:length(p.seq)){
+  cost[i]=costfunc(obs=data.train$bankruptcy, pred.p = predict.train ,pcut=p.seq[i])
+}
+
+
+```
+
+```{r}
+#find the optimal cut
+optimal.pcut.glm = p.seq[which(cost==min(cost))]
+optimal.pcut.glm
+plot(p.seq, cost)
+min(cost)
+```
+
+
+```{r}
+predict.test <- predict(model_step_both, newdata=data.test,type = "response")
+
+pred.train <- as.numeric(predict.train > optimal.pcut.glm)
+pred.test <- as.numeric(predict.test > optimal.pcut.glm)
+
+```
+
+```{r}
+confusion_matrix_train <- table(data.train$bankruptcy, pred.train,dnn=c("True","Predicted"))
+confusion_matrix_test <- table(data.test$bankruptcy, pred.test,dnn=c("True","Predicted"))
+```
+
+```{r}
+confusion_matrix_train
+```
+
+```{r}
+confusion_matrix_test
+```
+
+
+
+```{r}
+misclassification_rate_train <- round((confusion_matrix_train[2]+confusion_matrix_train[3])/sum(confusion_matrix_train), 2)
+misclassification_rate_test <- round((confusion_matrix_test[2]+confusion_matrix_test[3])/sum(confusion_matrix_test), 2)
+
+cat("train misclassfication rate:", misclassification_rate_train, "| test misclassfication rate:", misclassification_rate_test)
+```
+
+
+
+
+```{r}
+pred2 <- prediction(predict.test, data.test$bankruptcy)
+perf2 <- performance(pred2, "tpr", "fpr")
+plot(perf2, colorize=TRUE)
+
+```
+
+```{r}
+unlist(slot(performance(pred2, "auc"), "y.values"))
+```
+
+**Symmetric**
+
+```{r}
+#dtermine optimal cutoff
+
+# define a cost function with input "obs" being observed response 
+# and "pi" being predicted probability, and "pcut" being the threshold.
+costfunc = function(obs, pred.p, pcut){
+  weight1 = 1   # define the weight for "true=1 but pred=0" (FN)
+  weight0 = 1    # define the weight for "true=0 but pred=1" (FP)
+  c1 = (obs==1)&(pred.p<pcut)    # count for "true=1 but pred=0"   (FN)
+  c0 = (obs==0)&(pred.p>=pcut)   # count for "true=0 but pred=1"   (FP)
+  cost = mean(weight1*c1 + weight0*c0)  # misclassification with weight
+  return(cost) # you have to return to a value when you write R functions
+} # end of the function
+
+```
+
+```{r}
+p.seq=seq(0.01,1,0.01)
+cost=rep(0,length(p.seq))
+for( i in 1:length(p.seq)){
+  cost[i]=costfunc(obs=data.train$bankruptcy, pred.p = predict.train ,pcut=p.seq[i])
+}
+
+```
+
+```{r}
+#find the optimal cut
+optimal.pcut.glm = p.seq[which(cost==min(cost))]
+optimal.pcut.glm
+plot(p.seq, cost)
+min(cost)
+```
+
+```{r}
+predict.test <- predict(model_step_both, newdata=data.test,type = "response")
+
+pred.train <- as.numeric(predict.train > optimal.pcut.glm)
+pred.test <- as.numeric(predict.test > optimal.pcut.glm)
+```
+
+```{r}
+confusion_matrix_train <- table(data.train$bankruptcy, pred.train,dnn=c("True","Predicted"))
+confusion_matrix_test <- table(data.test$bankruptcy, pred.test,dnn=c("True","Predicted"))
+```
+
+```{r}
+confusion_matrix_train
+```
+
+```{r}
+confusion_matrix_test
+```
+
+```{r}
+misclassification_rate_train <- round((confusion_matrix_train[2]+confusion_matrix_train[3])/sum(confusion_matrix_train), 2)
+misclassification_rate_test <- round((confusion_matrix_test[2]+confusion_matrix_test[3])/sum(confusion_matrix_test), 2)
+
+cat("train misclassfication rate:", misclassification_rate_train, "| test misclassfication rate:", misclassification_rate_test)
+```
+
+```{r}
+pred3 <- prediction(predict.test, data.test$bankruptcy)
+perf3 <- performance(pred3, "tpr", "fpr")
+plot(perf3, colorize=TRUE)
+```
+
+```{r}
+unlist(slot(performance(pred3, "auc"), "y.values"))
+```
+
+
+
