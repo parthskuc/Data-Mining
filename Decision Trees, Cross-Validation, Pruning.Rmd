@@ -1,0 +1,615 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r, include=FALSE}
+library(tidyverse)
+library(DT)
+library(glmnet)
+library(rpart)
+library(caret)
+library(knitr)
+#install.packages('ExPanDaR')
+library(ExPanDaR)
+library(ROCR)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(jtools)
+library(kableExtra)
+```
+
+### Data Dictionary:
+
+
+chk_acct:  (qualitative)
+	       Status of existing checking account
+               A11 :      ... <    0 DM
+	       A12 : 0 <= ... <  200 DM
+	       A13 :      ... >= 200 DM /
+		     salary assignments for at least 1 year
+               A14 : no checking account
+
+duration:  (numerical)
+	      Duration in month
+
+credit_his:  (qualitative)
+	      Credit history
+	      A30 : no credits taken/
+		    all credits paid back duly
+              A31 : all credits at this bank paid back duly
+	      A32 : existing credits paid back duly till now
+              A33 : delay in paying off in the past
+	      A34 : critical account/
+		    other credits existing (not at this bank)
+
+purpose:  (qualitative)
+	      Purpose
+	      A40 : car (new)
+	      A41 : car (used)
+	      A42 : furniture/equipment
+	      A43 : radio/television
+	      A44 : domestic appliances
+	      A45 : repairs
+	      A46 : education
+	      A47 : (vacation - does not exist?)
+	      A48 : retraining
+	      A49 : business
+	      A410 : others
+
+amount:  (numerical)
+	      Credit amount
+
+saving_acct:  (qualitative)
+	      Savings account/bonds
+	      A61 :          ... <  100 DM
+	      A62 :   100 <= ... <  500 DM
+	      A63 :   500 <= ... < 1000 DM
+	      A64 :          .. >= 1000 DM
+              A65 :   unknown/ no savings account
+
+present_emp:  (qualitative)
+	      Present employment since
+	      A71 : unemployed
+	      A72 :       ... < 1 year
+	      A73 : 1  <= ... < 4 years  
+	      A74 : 4  <= ... < 7 years
+	      A75 :       .. >= 7 years
+
+installment_rate:  (numerical)
+	      Installment rate in percentage of disposable income
+
+sex:  (qualitative)
+	      Personal status and sex
+	      A91 : male   : divorced/separated
+	      A92 : female : divorced/separated/married
+              A93 : male   : single
+	      A94 : male   : married/widowed
+	      A95 : female : single
+
+other_debtor: (qualitative)
+	      Other debtors / guarantors
+	      A101 : none
+	      A102 : co-applicant
+	      A103 : guarantor
+
+present_resid: (numerical)
+	      Present residence since
+
+property: (qualitative)
+	      Property
+	      A121 : real estate
+	      A122 : if not A121 : building society savings agreement/
+				   life insurance
+              A123 : if not A121/A122 : car or other, not in attribute 6
+	      A124 : unknown / no property
+
+age: (numerical)
+	      Age in years
+
+other_install: (qualitative)
+	      Other installment plans 
+	      A141 : bank
+	      A142 : stores
+	      A143 : none
+
+housing: (qualitative)
+	      Housing
+	      A151 : rent
+	      A152 : own
+	      A153 : for free
+
+n_credits: (numerical)
+              Number of existing credits at this bank
+
+job: (qualitative)
+	      Job
+	      A171 : unemployed/ unskilled  - non-resident
+	      A172 : unskilled - resident
+	      A173 : skilled employee / official
+	      A174 : management/ self-employed/
+		     highly qualified employee/ officer
+
+n_people: (numerical)
+	      Number of people being liable to provide maintenance for
+
+telephone: (qualitative)
+	      Telephone
+	      A191 : none
+	      A192 : yes, registered under the customers name
+
+foreign: (qualitative)
+	      foreign worker
+	      A201 : yes
+	      A202 : no
+
+response: 0 : Good Customer
+          1 : Bad Customer
+
+### Reading the data:
+
+
+```{r}
+set.seed(13383610)
+
+german_credit = read.table("http://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german/german.data")
+
+colnames(german_credit)=c("chk_acct","duration","credit_his","purpose","amount","saving_acct","present_emp","installment_rate","sex","other_debtor","present_resid","property","age","other_install","housing","n_credits","job","n_people","telephone","foreign","response")
+
+#orginal response coding 1= good, 2 = bad
+#we need 0 = good, 1 = bad
+german_credit$response = german_credit$response - 1
+
+str(german_credit)
+```
+
+Converting the response variable to factor:
+
+```{r}
+german_credit$response <- as.factor(german_credit$response)
+
+head(german_credit)
+```
+
+### Sampling the data:
+
+```{r}
+index <- sample(nrow(german_credit),nrow(german_credit)*0.70)
+data_train = german_credit[index,]
+data_test = german_credit[-index,]
+
+nrow(data_train)
+```
+
+### Exploratory Data Analysis
+```{r}
+#ExPanD(data_train, export_nb_option = TRUE)
+```
+
+```{r}
+summary(data_train)
+```
+
+```{r}
+colSums(is.na(data_train))
+```
+
+```{r}
+par(mfrow=c(2,2))
+hist(data_train$duration,xlab='Duration',col='steelblue')
+hist(data_train$amount,xlab='Amount',col='steelblue')
+histogram(data_train$age,xlab='Age',col='steelblue')
+histogram(data_train$response,xlab='Response',col='steelblue')
+```
+
+```{r}
+ggplot(data_train, aes(x=duration, fill=as.factor(response))) +geom_histogram(position = 'dodge', aes(y=..density..))
+```
+
+```{r}
+ggplot(data_train, aes(x=age, fill=as.factor(response))) +geom_histogram(position = 'dodge', aes(y=..density..))
+
+```
+```{r}
+model <- glm(response~., family=binomial, data=data_train)
+
+summary(model)
+```
+
+**Running model with important features**
+
+```{r}
+model1 <- glm(response~ chk_acct + duration + credit_his + purpose + amount + saving_acct + installment_rate  + other_debtor+ age+ other_install, family=binomial(link=logit) ,data=data_train)
+
+summary(model1)
+```
+```{r}
+library(jtools)
+summ(model1)
+```
+```{r}
+tab_model(model1)
+```
+
+```{r}
+model1$deviance
+```
+
+```{r}
+AIC(model1)
+```
+
+```{r}
+BIC(model1)
+```
+
+```{r}
+model2<- glm(response~ chk_acct + duration + credit_his + purpose + amount + saving_acct + installment_rate  + other_debtor+ age+ other_install, family=binomial(link=probit), data=data_train)
+
+summary(model2)
+```
+```{r}
+summ(model2)
+```
+```{r}
+model2$deviance
+```
+```{r}
+AIC(model2)
+```
+```{r}
+BIC(model2)
+```
+
+```{r}
+model3<- glm(response~ chk_acct + duration + credit_his + purpose + amount + saving_acct + installment_rate  + other_debtor+ age+ other_install, family=binomial(link=cloglog), data=data_train)
+
+summary(model3)
+```
+```{r}
+summ(model3)
+```
+```{r}
+model3$deviance
+```
+
+```{r}
+AIC(model3)
+```
+
+```{r}
+BIC(model3)
+```
+
+**Variables Selection using step AIC**
+
+```{r}
+#install.packages('kableExtra')
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(jtools)
+library(kableExtra)
+fullmodel<- glm(response ~ .,
+                  data=data_train,
+                  family=binomial)
+
+nullmodel = glm(response~1,data=data_train,family=binomial)
+model_step_both <- step(nullmodel, direction = 'both',
+                        scope = list(lower=nullmodel,upper=fullmodel))
+
+summary(model_step_both)
+```
+```{r}
+summ(model_step_both)
+```
+```{r}
+tab_model(model_step_both)
+```
+
+```{r}
+AIC(model_step_both)
+```
+
+```{r}
+BIC(model_step_both)
+```
+
+**Var selection using BIC**
+```{r}
+model_step_both_bic <- step(nullmodel, direction = 'both',
+                        scope = list(lower=nullmodel,upper=fullmodel),k=log(nrow(data_train)))
+
+summary(model_step_both_bic)
+```
+```{r}
+AIC(model_step_both_bic)
+```
+
+```{r}
+BIC(model_step_both_bic)
+```
+```{r}
+summ(model_step_both_bic)
+```
+**ROC of Train Predictions**
+```{r}
+pred <- prediction(predict(model_step_both), data_train$response)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize=TRUE)
+```
+```{r}
+p <- performance(pred,"auc")
+as.numeric(p@y.values)
+```
+
+```{r}
+pred1 <- prediction(predict(model_step_both_bic), data_train$response)
+perf1 <- performance(pred1, "tpr", "fpr")
+plot(perf1, colorize=TRUE)
+```
+```{r}
+p1 <- performance(pred1,"auc")
+as.numeric(p1@y.values)
+```
+
+**Results**
+
+Model with AIC selection is better :**Selecting model_step_both**
+
+**Out of sample predictions**
+
+```{r}
+pred_test <- predict(model_step_both, newdata=data_test)
+```
+
+```{r}
+pred.test <- as.numeric(pred_test > 0.5)
+
+
+confusion_matrix_test <- table(data_test$response, pred.test)
+```
+
+```{r}
+confusion_matrix_test
+```
+
+```{r}
+misclassification_rate_test <- round((confusion_matrix_test[2]+confusion_matrix_test[3])/sum(confusion_matrix_test), 2)
+misclassification_rate_test
+```
+```{r}
+pred2 <- prediction(pred_test, data_test$response)
+perf2 <- performance(pred2, "tpr", "fpr")
+plot(perf2, colorize=TRUE)
+```
+
+```{r}
+p2 <- performance(pred2,"auc")
+as.numeric(p2@y.values)
+```
+
+```{r}
+data_train
+```
+
+
+```{r}
+x_train = model.matrix(response~., data_train)[,-21]
+x_test = model.matrix(response~., data_test)[,-21]
+```
+
+```{r}
+y_train <- as.numeric(data_train$response)
+
+y_test <- as.numeric(data_test$response)
+```
+
+```{r}
+library(glmnet)
+#set.seed(13383610) 
+cv.lasso <- cv.glmnet(x_train, y_train, alpha = 1, family = "binomial")
+# Fit the final model on the training data
+model <- glmnet(x_train, y_train, alpha = 1, family = "binomial",
+                lambda = cv.lasso$lambda.min)
+```
+
+```{r}
+coef(model)
+```
+
+```{r}
+plot(cv.lasso)
+```
+
+```{r}
+# Make predictions on the test data
+probabilities <- model %>% predict(newx = x_test)
+predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+# Model accuracy
+observed.classes <- data_test$response
+mean(predicted.classes == observed.classes)
+```
+```{r}
+cv.lasso$lambda.min
+```
+```{r}
+cv.lasso$lambda.1se
+```
+
+```{r}
+pred.lasso.train<- predict(model, newx=x_train, s=cv.lasso$lambda.1se, type = "response")
+pred_lasso <- prediction(pred.lasso.train, y_train)
+perf_lasso <- performance(pred_lasso, "tpr", "fpr")
+plot(perf_lasso, colorize=TRUE)
+```
+```{r}
+AIC(model)
+```
+
+
+
+
+```{r}
+coef(cv.lasso, cv.lasso$lambda.min)
+```
+```{r}
+pred_test_lasso <- predict(cv.lasso, newdata=data_test)
+```
+
+```{r}
+pred.test <- as.numeric(pred_test > 0.5)
+
+```
+
+
+
+**Getting the optimal cut off probabilities**
+```{r}
+pred_train <- predict(model_step_both, type="response")
+# define a cost function with input "obs" being observed response 
+# and "pi" being predicted probability, and "pcut" being the threshold.
+costfunc = function(obs, pred.p, pcut){
+  weight1 = 5   # define the weight for "true=1 but pred=0" (FN)
+  weight0 = 1    # define the weight for "true=0 but pred=1" (FP)
+  c1 = (obs==1)&(pred.p<pcut)    # count for "true=1 but pred=0"   (FN)
+  c0 = (obs==0)&(pred.p>=pcut)   # count for "true=0 but pred=1"   (FP)
+  cost = mean(weight1*c1 + weight0*c0)  # misclassification with weight
+  return(cost) # you have to return to a value when you write R functions
+} # end of the function
+
+# define a sequence from 0.01 to 1 by 0.01
+p.seq = seq(0.01, 1, 0.01) 
+
+# write a loop for all p-cut to see which one provides the smallest cost
+# first, need to define a 0 vector in order to save the value of cost from all pcut
+cost = rep(0, length(p.seq))  
+for(i in 1:length(p.seq)){ 
+  cost[i] = costfunc(obs = data_train$response, pred.p = pred_train, pcut = p.seq[i])  
+} # end of the loop
+
+optimal.pcut = p.seq[which(cost==min(cost))][1]
+
+optimal.pcut
+```
+
+### optimal cutoff is 0.48
+
+**Out of sample predictions using optimal cutoff**
+
+```{r}
+pred.test2 <- as.numeric(pred_test > optimal.pcut)
+
+
+confusion_matrix_test2 <- table(data_test$response, pred.test2)
+
+```
+
+```{r}
+confusion_matrix_test2
+```
+```{r}
+misclassification_rate_test <- round((confusion_matrix_test2[2]+confusion_matrix_test2[3])/sum(confusion_matrix_test2), 2)
+misclassification_rate_test
+```
+
+### Nothing much changes using the optimal cutoff rate. The misclassification rate is still the same. Only one value extra is classified as false positive.
+
+**3 fold Cross-Validation**
+
+```{r}
+pcut = 1/(5+1)
+
+#Asymmetric cost
+cost2 <- function(r, pi){
+  weight1 = 5
+  weight0 = 1
+  c1 = (r==1)&(pi<pcut) #logical vector - true if actual 1 but predict 0
+  c0 = (r==0)&(pi>pcut) #logical vector - true if actual 0 but predict 1
+  cost_= mean(weight1*c1+weight0*c0)
+  return(cost_)
+}
+```
+
+```{r}
+library(boot)
+credit.glm1<- glm(response~. , family=binomial, data=german_credit) 
+cv.result = cv.glm(data=german_credit, glmfit=credit.glm1, cost=cost2, K=3) 
+cv.result$delta[2]
+```
+
+The second component of delta is the adjusted cross-validation estimate of prediction error. It is not the same as 3rd question and has increased from 0.24 to 0.55.
+
+
+```{r}
+#function for AUC
+aucfunc = function(obs, pred.p){
+  pred_ts <- prediction(pred.p, obs)
+  return(unlist(slot(performance(pred_ts, "auc"), "y.values"))) 
+} 
+```
+
+```{r}
+cv.result2 = cv.glm(data=german_credit, glmfit=credit.glm1, cost=aucfunc, K=3) 
+cv.result2$delta[2]
+```
+**CART**
+
+```{r}
+library(dplyr)
+german.rpart0 <- rpart(formula = response ~ ., data = data_train, method = "class")
+german.rpart0
+
+```
+```{r}
+library(rpart)
+library(rpart.plot)
+prp(german.rpart0,extra=1)
+```
+
+**In sample Prediction**
+
+```{r}
+german.train.pred.tree1<- predict(german.rpart0, data_train, type="class")
+table(data_train$response, german.train.pred.tree1, dnn=c("Truth","Predicted"))
+```
+
+```{r}
+misclassification_rate_train_tree <- round((confusion_matrix_test2[2]+confusion_matrix_test2[3])/sum(confusion_matrix_test2), 2)
+misclassification_rate_test
+```
+
+
+```{r}
+cost <- function(r, pi){
+  weight1 = 5
+  weight0 = 1
+  c1 = (r==1)&(pi==0) #logical vector - true if actual 1 but predict 0
+  c0 = (r==0)&(pi==1) #logical vector - true if actual 0 but predict 1
+  return(mean(weight1*c1+weight0*c0))
+}
+```
+
+```{r}
+cost(data_train$response,german.train.pred.tree1)
+```
+
+
+**Out of sample Prediction**
+
+
+```{r}
+german.test.pred.tree1<- predict(german.rpart0, data_test, type="class")
+table(data_test$response, german.test.pred.tree1, dnn=c("Truth","Predicted"))
+```
+```{r}
+cost(data_test$response,german.test.pred.tree1)
+```
+
